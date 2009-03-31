@@ -31,4 +31,4 @@ Why yes, indeed there is! An example project has been included which implements 
 
 ## Do any cool iPhone applications use this code?
 
-The only app at the moment is "anim8gif":http://www.itunes.com/app/anim8gif .
+The only app at the moment is <a href="http://www.itunes.com/app/anim8gif">anim8gif</a>.
