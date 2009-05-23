@@ -313,10 +313,49 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
             
             if (gifinfo->Image.Interlace)
             {
-                int i = 1;
+                int sourceRow = 0;
+                
+                for (int i=0; i<4; i++) {
+                    int startRow;
+                    int interval;
+                    switch (i) {
+                        case 0:
+                            startRow = 0;
+                            interval = 8;
+                            break;
+                        case 1:
+                            startRow = 4;
+                            interval = 8;
+                            break;
+                        case 2:
+                            startRow = 2;
+                            interval = 4;
+                            break;
+                        case 3:
+                            startRow = 1;
+                            interval = 2;
+                            break;
+                    }
+                    
+                    // Spit out into buff using indexes
+                    for (int destRow = startRow; destRow < bottom; destRow += interval)
+                    {
+                        unsigned char *dptr = buff + (destRow * (gwidth+next));
+                        unsigned char *sptr = gifsrc + (sourceRow * gwidth);
+                        for (int j=0; j<gwidth; j++) {
+                            unsigned char c = *sptr++;
+                            if (trans && c == transindex) {
+                                dptr++;
+                                continue;
+                            }
+                            *dptr++ = c + custom;
+                        }
+                        
+                        sourceRow++;
+                    }
+                }
             }
-            
-            while (bottom-- != 0)
+            else while (bottom-- != 0) // non-interlaced
             {
                 right = gwidth;
                 while (right-- != 0) {
