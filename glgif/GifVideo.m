@@ -34,9 +34,6 @@
 
 @implementation GifVideo
 
-@synthesize tex;
-@synthesize playing;
-
 int goodSize(int val)
 {
     if (val < 128)
@@ -57,6 +54,7 @@ int goodSize(int val)
         // hmm....
         disposal = 0;
         trans = false;
+        thumbDelegate = nil;
         [self resetState];
         
         if (gifinfo == 0x0)
@@ -126,9 +124,56 @@ int goodSize(int val)
     [super dealloc];
 }
 
-void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject *lmap, int* offset)
+- (UIImage*)dumpFrame:(char*)textureData
 {
-    char *cp = curPal;
+    // Make the bitmap
+    CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB();
+    unsigned char *mem = (unsigned char*)malloc(width * gifinfo->SHeight * 4);
+    CGContextRef ctx = CGBitmapContextCreate(mem,
+                                             gifinfo->SWidth,
+                                             gifinfo->SHeight,
+                                             8,
+                                             gifinfo->SWidth * 4,
+                                             colorspace,
+                                             kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(colorspace);
+    
+    if (!ctx) {
+        free(mem);
+        return NULL;
+    }
+    
+    // Copy pixels...
+    unsigned char *dat = mem;
+    unsigned char *ptr;
+    unsigned char *tPal = (unsigned char*)textureData;
+    unsigned char *fData = ((unsigned char*)textureData) + ((bpp == 8 ? 256 : 16)*3);
+    
+    for (int y=0; y<gifinfo->SHeight; y++) {
+        ptr = fData + (width * y);
+        for (int x=0; x<gifinfo->SWidth; x++) {
+            int spal = (*ptr++) * 3;
+            
+            *dat++ = tPal[spal];   // R
+            *dat++ = tPal[spal+1];   // G
+            *dat++ = tPal[spal+2]; // B
+            *dat++ = 255; // A
+        }
+    }
+    
+    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    UIImage *ret = [UIImage imageWithCGImage:img];
+    
+    CGContextRelease(ctx);
+    free(mem);
+    CGImageRelease(img);
+    
+    return ret;
+}
+
+void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorMapObject *lmap, int* offset)
+{
+    unsigned char *cp = curPal;
     GifColorType *color;
     int count = 0;
     
@@ -235,9 +280,9 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
                         *ft = (1.0/100.0)*frametime;
                         
                         if (prevFrame == NULL)
-                            prevFrame = (char*)malloc(width*height);
+                            prevFrame = (unsigned char*)malloc(width*height);
                         if (disposeFrame == NULL)
-                            disposeFrame = (char*)malloc(width*height);
+                            disposeFrame = (unsigned char*)malloc(width*height);
                         
                         //if(disposal==2&&transindex==gifinfo->SBackGroundColor)
                         //    trans=true;
@@ -284,8 +329,8 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
         
         if (DGifGetLine(gifinfo, gif_data, gwidth * gheight) != GIF_ERROR) {
             readingFrame = NO;
-            char *dat = ( char* ) malloc( upload_size );
-            char *sdat = dat+((bpp == 8 ? 256 : 16)*3);
+            unsigned char *dat = ( unsigned char* ) malloc( upload_size );
+            unsigned char *sdat = dat+((bpp == 8 ? 256 : 16)*3);
             
             // Restore previous frame (> 0)... or the background (no frame)
             if (disposal != 0 && prevFrame)
@@ -377,7 +422,7 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
             
             // Now dipose bits in lastFrame
             if (prevFrame && disposal > 1) {
-                char *dptr = prevFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
+                unsigned char *dptr = prevFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
                 int right = gwidth;
                 int bottom = gheight;
                 int next = ((width-gwidth) * (8/bpp));
@@ -391,7 +436,7 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
                         dptr += next;
                     }
                 } else if (disposal == 3) { // set previous background
-                    char *sptr = disposeFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
+                    unsigned char *sptr = disposeFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
                     
                     while (bottom-- != 0) {
                         right = gwidth;
@@ -405,7 +450,15 @@ void map_palette(char *curPal, int *cpo, ColorMapObject *global, ColorMapObject 
             }
             
             VideoSource_endBytes(src);
-            return dat;
+            
+            // Handle thumbnail
+            if (thumbDelegate) {
+                UIImage *img = [self dumpFrame:(char*)dat];
+                [thumbDelegate performSelector:@selector(videoDumpedFrame:) withObject:img];
+                thumbDelegate = nil;
+            }
+            
+            return (char*)dat;
         } else {
             free(gif_data);
             

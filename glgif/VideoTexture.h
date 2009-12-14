@@ -45,6 +45,9 @@ typedef struct VideoTexture {
 // Initializes VideoTexture.
 extern VideoTexture* VideoTexture_init(int width, int height, GLint fmt);
 
+// Sets texture filter
+extern void VideoTexture_filter(GLint filter);
+
 // Releases VideoTexture. Will free if retain count is 0
 extern void VideoTexture_release(VideoTexture *tex);
 

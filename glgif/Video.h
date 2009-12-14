@@ -73,8 +73,11 @@
     bool beingDestroyed;
     NSLock *cacheLock;
     //NSThread *thread;
+    
+    id thumbDelegate;
 }
 
+@property(nonatomic, assign) id thumbDelegate;
 @property(nonatomic, assign) VideoTexture *tex;
 @property(nonatomic, readonly, assign) bool playing;
 @property(nonatomic, assign) VideoSource *src;

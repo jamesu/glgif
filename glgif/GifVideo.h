@@ -26,7 +26,7 @@
  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
- */
+*/
 
 #import <Foundation/Foundation.h>
 
@@ -43,14 +43,12 @@
     bool bestQuality;
     bool readingFrame;
     
-    char *prevFrame;
-    char *disposeFrame;
+    unsigned char *prevFrame;
+    unsigned char *disposeFrame;
     
     int curPalOffs;
-    char curPal[256*3];
+    unsigned char curPal[256*3];
 }
-
-@property(nonatomic, readonly, assign) bool playing;
 
 // Overrides
 - (id)initWithSource:(VideoSource*)source inContext:(EAGLContext*)ctx;

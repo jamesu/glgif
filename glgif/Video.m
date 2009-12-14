@@ -39,6 +39,7 @@
 @synthesize tex;
 @synthesize playing;
 @synthesize src;
+@synthesize thumbDelegate;
 
 - (id)initWithSource:(VideoSource*)source inContext:(EAGLContext*)ctx
 {
@@ -48,6 +49,7 @@
         context = ctx;
         
         beingDestroyed = NO;
+        thumbDelegate = nil;
         
         if (src) {
             width = 256;

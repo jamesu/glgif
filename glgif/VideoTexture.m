@@ -30,8 +30,14 @@
 
 #import "VideoTexture.h"
 
+// GL_LINEAR == interpolates, GL_NEAREST == blocky
 static GLint sMinFilter = GL_NEAREST;
 static GLint sMagFilter = GL_NEAREST;
+
+void VideoTexture_filter(GLint filter)
+{
+    sMinFilter = sMagFilter = filter;
+}
 
 VideoTexture *VideoTexture_init(int width, int height, GLint fmt) {
     VideoTexture *build = malloc(sizeof(VideoTexture));
