@@ -6,7 +6,7 @@ glgif is a fast and comprehensive library for playing back .gif animations on th
 
 ## Sounds great, how do i use it?
 
-At the core, glgif merely uploads frames from a gif animation to an OpenGLES texture. So all you need to do is the following:
+At the core, glgif merely uploads frames from a gif animation to an OpenGLES texture. So the first thing you need to do is be sure to link the OpenGLES and QuartzCore frameworks to your app. Then, add the glgif files to your project (including the lungif subdirectory). After that, all you need to do is the following:
 
     // Load the gif
     FILE *fp = fopen("test.gif", "r");
