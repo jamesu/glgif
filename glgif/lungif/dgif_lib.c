@@ -169,7 +169,7 @@ GifFileType *
 DGifOpen(void *userData,
          InputFunc readFunc) {
 
-    unsigned char Buf[GIF_STAMP_LEN + 1];
+    char* Buf[GIF_STAMP_LEN + 1];
     GifFileType *GifFile;
     GifFilePrivateType *Private;
 
