@@ -91,6 +91,7 @@ typedef struct GifFileType {
     int ImageCount;             /* Number of current image */
     GifImageDesc Image;         /* Block describing current image */
     struct SavedImage *SavedImages; /* Use this to accumulate file state */
+    int generateSavedImages;        /* Generate saved images? */
     VoidPtr UserData;           /* hook to attach user data (TVT) */
     VoidPtr Private;            /* Don't mess with this! */
 } GifFileType;

@@ -387,7 +387,7 @@ DGifGetImageDesc(GifFileType * GifFile) {
             _GifError = D_GIF_ERR_NOT_ENOUGH_MEM;
             return GIF_ERROR;
         }
-    } else {
+    } else if (GifFile->generateSavedImages) {
         if ((GifFile->SavedImages =
              (SavedImage *) malloc(sizeof(SavedImage))) == NULL) {
             _GifError = D_GIF_ERR_NOT_ENOUGH_MEM;
@@ -395,22 +395,24 @@ DGifGetImageDesc(GifFileType * GifFile) {
         }
     }
 
-    sp = &GifFile->SavedImages[GifFile->ImageCount];
-    memcpy(&sp->ImageDesc, &GifFile->Image, sizeof(GifImageDesc));
-    if (GifFile->Image.ColorMap != NULL) {
-        sp->ImageDesc.ColorMap = MakeMapObject(
-                                 GifFile->Image.ColorMap->ColorCount,
-                                 GifFile->Image.ColorMap->Colors);
-        if (sp->ImageDesc.ColorMap == NULL) {
-            _GifError = D_GIF_ERR_NOT_ENOUGH_MEM;
-            return GIF_ERROR;
+    if (GifFile->generateSavedImages) {
+        sp = &GifFile->SavedImages[GifFile->ImageCount];
+        memcpy(&sp->ImageDesc, &GifFile->Image, sizeof(GifImageDesc));
+        if (GifFile->Image.ColorMap != NULL) {
+            sp->ImageDesc.ColorMap = MakeMapObject(
+                                     GifFile->Image.ColorMap->ColorCount,
+                                     GifFile->Image.ColorMap->Colors);
+            if (sp->ImageDesc.ColorMap == NULL) {
+                _GifError = D_GIF_ERR_NOT_ENOUGH_MEM;
+                return GIF_ERROR;
+            }
         }
-    }
-    sp->RasterBits = (unsigned char *)NULL;
-    sp->ExtensionBlockCount = 0;
-    sp->ExtensionBlocks = (ExtensionBlock *) NULL;
+        sp->RasterBits = (unsigned char *)NULL;
+        sp->ExtensionBlockCount = 0;
+        sp->ExtensionBlocks = (ExtensionBlock *) NULL;
 
-    GifFile->ImageCount++;
+        GifFile->ImageCount++;
+    }
 
     Private->PixelCount = (long)GifFile->Image.Width *
        (long)GifFile->Image.Height;

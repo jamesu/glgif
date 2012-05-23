@@ -2,9 +2,9 @@
  
  glgif
  
- Video - base class for video playback.
+ PlayerView - example view to play the GifVideo.
  
- Copyright (C) 2009 James S Urquhart
+ Copyright (C) 2009-2012 James S Urquhart
  
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -26,7 +26,7 @@
  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-*/
+ */
 
 #import <Foundation/Foundation.h>
 
@@ -35,10 +35,57 @@
 
 #define MAX_CACHE 2
 
+#define VIDEO_NONE 0 // data
+#define VIDEO_GIF  1
+
+
+#define DISPOSE_RESET 0
+#define DISPOSE_CLEARBG 1
+#define DISPOSE_PREVIOUSBG 2
+#define DISPOSE_NONE 3
+
+#define BLEND_SOURCE 0
+#define BLEND_OVER 1
+
+@class Video;
+
+typedef struct GIFRect
+{
+   int x, y, width, height;
+} GIFRect;
+
+static inline GIFRect GIFRectMake(int x, int y, int w, int h) { GIFRect rect; rect.x = x; rect.y = y; rect.width=w; rect.height=h; return rect; }
+
+typedef struct VideoWorkerFrame_s {
+   char disposal_type, blend_type;
+   unsigned char *data;
+   
+   float dt;
+   bool ready;
+   bool reset;
+   
+   int frameID;
+   
+   GIFRect rect;
+   char clear_r, clear_g, clear_b, clear_a;
+} VideoWorkerFrame_t;
+
+typedef struct TargetRenderInfo
+{
+   GLuint frameBuffer;
+   GIFRect viewport;
+   GLfloat projection[16];
+} TargetRenderInfo;
+
+
+static inline TargetRenderInfo TargetRenderInfoMake(GLuint frameBuffer, GIFRect viewport, GLfloat* newProjection) { TargetRenderInfo info; info.frameBuffer = frameBuffer; info.viewport = viewport; memcpy(info.projection, newProjection, sizeof(GLfloat)*16); return info; }
+
+void TargetRenderInfoSet(TargetRenderInfo info);
+
 @class EAGLContext;
+@class PlayerView;
 
 @interface Video : NSObject {
-    VideoTexture *tex;
     VideoSource *src;
     
     EAGLContext *context;
@@ -47,72 +94,70 @@
     int height;
     int bpp;
     
+    GLint fmt;
+    float waitDT;
+    
     int req_pos;
     int upload_size;
     
     double fps_time;
-    double sync_time;
-    double last_sync;
-    
-    char *data[MAX_CACHE];
-    float data_delay[MAX_CACHE];
-    int cacheCount;
-    
-    bool frame;
-    bool ready;
-    bool flags;
     
     // state
     bool playing;
     bool loop;
     int v_frame; // read frame
-    int d_frame; // display frame
-    
-    
-    bool threadDone;
-    bool beingDestroyed;
-    NSLock *cacheLock;
-    //NSThread *thread;
     
     id thumbDelegate;
+    id thumbObject;
+   
+    TargetRenderInfo viewRenderInfo;
+    TargetRenderInfo disposalRenderInfo;
+   
+   
+    VideoTexture *painter;
+    GLuint framebuffer, texture;
+    VideoWorkerFrame_t last_frame;
+   
+    VideoWorkerFrame_t work_frame;
+    VideoWorkerFrame_t *wait_frame;
 }
 
-@property(nonatomic, assign) id thumbDelegate;
-@property(nonatomic, assign) VideoTexture *tex;
+
+@property(nonatomic, assign) TargetRenderInfo viewRenderInfo;
+@property(nonatomic, readonly) int upload_size;
+@property(nonatomic, readonly) double fps_time;
+@property(nonatomic, readonly) GLint fmt;
+@property(nonatomic, retain) id thumbDelegate;
+@property(nonatomic, retain) id thumbObject;
 @property(nonatomic, readonly, assign) bool playing;
 @property(nonatomic, assign) VideoSource *src;
+@property(nonatomic, readonly) int videoType;
 
-// Gets next frame from Video
-- (int)getFrame;
-
-// Size of backend texture
-- (int)calcTexSize;
-
-// Pretty self-explanatory
 - (void)play:(bool)doesLoop;
 - (void)stop;
 
-// Uploads next frame from video to texture
-- (bool)nextFrame;
+- (bool)setupRenderTexture;
+- (void)clearRenderTexture;
+- (void)setPaintHead:(VideoTexture*)painter;
 
-// Overrides...
-
-// Init the video
+// Overrides
 - (id)initWithSource:(VideoSource*)source inContext:(EAGLContext*)ctx;
-
-// Allocate the VideoTexture
-- (void)allocTex;
-
-// Data for the next frame (should be in VideoTexture's format)
-- (char*)dataForNextFrame:(float*)ft shouldStop:(bool*)sstop recurseCount:(int)recurse;
-
-// Reset to default state
-- (void)resetState;
-
-// Scaling factor to remove texture border
+- (void)resetState:(bool)gl;
 - (void)frameClipScale:(float*)scale;
-
-// Size of frame in pixels
 - (CGSize)frameSize;
+- (CGSize)backingSize;
+- (bool)drawNextFrame:(float)dt toView:(PlayerView*)view withBackingSize:(CGSize)size;
+
+- (bool)drawFrame:(VideoWorkerFrame_t*)frame andDisposal:(bool)updateDisposal;
+- (void)drawPreviousFrame:(GIFRect)frameRect;
+
+- (UIImage*)dumpFrame:(VideoWorkerFrame_t*)frame;
+
++ (Video*)videoByType:(int)type withSource:(VideoSource*)source inContext:(EAGLContext*)context;
 
 @end
+
+
+
+extern GLfloat sVidSquareVertices[8];
+extern GLfloat sVidSquareTexcoords[8];

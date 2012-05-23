@@ -4,7 +4,7 @@
  
  PlayerView - example view to play the GifVideo.
  
- Copyright (C) 2009 James S Urquhart
+ Copyright (C) 2009-2012 James S Urquhart
  
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -26,12 +26,15 @@
  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-*/
+ */
 
 #import <UIKit/UIKit.h>
 #import <OpenGLES/EAGL.h>
 #import <OpenGLES/ES1/gl.h>
 #import <OpenGLES/ES1/glext.h>
+
+#import "VideoTexture.h"
+#import "VideoSource.h"
 
 @class Video;
 #define PLAYER_DEG_TO_RAD				0.017453f
@@ -48,6 +51,10 @@
     /* OpenGL names for the renderbuffer and framebuffers used to render to this view */
     GLuint viewRenderbuffer, viewFramebuffer;
     
+    GLfloat projectionMatrix[16];
+    
+    
+@public
     UIInterfaceOrientation targetOrient;
     
     NSTimer *animationTimer;
@@ -67,21 +74,27 @@
     float tex_sx;
     float tex_sy;
     
+    bool madeFB;
+    
     bool zoomAspect;
     
-    Video *vid;
+    Video *video;
 }
 
-@property NSTimeInterval animationInterval;
 @property(nonatomic, assign) UIInterfaceOrientation targetOrient;
-@property(nonatomic, retain) Video *vid;
+@property(nonatomic, retain) Video *video;
 @property(nonatomic, assign) bool zoomAspect;
 
-@property (nonatomic, retain) EAGLContext *context;
+@property(nonatomic, retain) EAGLContext *context;
 
-- (void)startAnimation:(Video*)video;
-- (void)stopAnimation;
-- (void)drawView;
+@property NSTimeInterval animationInterval;
+@property(nonatomic, assign) NSTimer *animationTimer;
+
+- (id)initWithFrame:(CGRect)frame inShareGroup:(void*)glShare;
+- (void)drawView:(float)dt;
+- (void)clearView;
+
+- (void)setViewBuffer;
 
 - (void)setAspectScale:(bool)force;
 - (void)clearAspectScale;

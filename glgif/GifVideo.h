@@ -2,9 +2,9 @@
  
  glgif
  
- GifVideo - implementation of Video which plays animated gifs.
+ PlayerView - example view to play the GifVideo.
  
- Copyright (C) 2009 James S Urquhart
+ Copyright (C) 2009-2012 James S Urquhart
  
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -42,19 +42,15 @@
     
     bool bestQuality;
     bool readingFrame;
-    
-    unsigned char *prevFrame;
-    unsigned char *disposeFrame;
-    
-    int curPalOffs;
-    unsigned char curPal[256*3];
+    unsigned int    current_frame;
 }
 
 // Overrides
 - (id)initWithSource:(VideoSource*)source inContext:(EAGLContext*)ctx;
-- (void)allocTex;
-- (char*)dataForNextFrame:(float*)ft shouldStop:(bool*)sstop recurseCount:(int)recurse;
 - (void)frameClipScale:(float*)scale;
 - (CGSize)frameSize;
+
+- (bool)drawFrame:(VideoWorkerFrame_t*)current_frame andDisposal:(bool)updateDisposal;
+- (void)flushState;
 
 @end

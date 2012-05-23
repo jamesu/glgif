@@ -2,9 +2,9 @@
  
  glgif
  
- VideoTexture - wrapper for uploading OpenGLES textures.
+ PlayerView - example view to play the GifVideo.
  
- Copyright (C) 2009 James S Urquhart
+ Copyright (C) 2009-2012 James S Urquhart
  
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -26,7 +26,7 @@
  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-*/
+ */
 
 #import "VideoTexture.h"
 
@@ -44,11 +44,11 @@ VideoTexture *VideoTexture_init(int width, int height, GLint fmt) {
     build->width = width;
     build->height = height;
     build->format = fmt;
+    build->tex = 0;
     build->size = VideoTexture_sizeOfTexture(fmt, width, height, 0);
     
     build->data = (char*)malloc(build->size);
     
-    // Clear base
     int i;
     int mipmaplevels = 0;
     char *ptr = build->data;
@@ -59,7 +59,6 @@ VideoTexture *VideoTexture_init(int width, int height, GLint fmt) {
     memset(ptr, 0, sz);
     ptr += sz;
     
-    // Clear mips
     for (i=0; i<mipmaplevels; i++) {
         sw >>= 1;
         sh >>= 1;
@@ -145,6 +144,8 @@ bool VideoTexture_load(VideoTexture *tex) {
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
+    //glTexParameterf(GL_TEXTURE_2D,GL_GENERATE_MIPMAP, GL_TRUE);
+    
     if (VideoTexture_compressed(tex->format)) {
         glCompressedTexImage2D ( GL_TEXTURE_2D,
                                 0, // level
@@ -166,7 +167,7 @@ bool VideoTexture_load(VideoTexture *tex) {
                      tex->data);
     }
     
-    free(tex->data);
+    if (tex->data) free(tex->data);
     tex->data = NULL;
     tex->size = 0;
     
@@ -221,6 +222,7 @@ int VideoTexture_sizeOfTexture(GLint format, int width, int height, int mipmaple
             
         case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:
             bpp = 4;
+            break;
         case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:
             bpp = 2;
             break;

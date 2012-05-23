@@ -2,9 +2,9 @@
  
  glgif
  
- GifVideo - implementation of Video which plays animated gifs.
+ PlayerView - example view to play the GifVideo.
  
- Copyright (C) 2009 James S Urquhart
+ Copyright (C) 2009-2012 James S Urquhart
  
  Permission is hereby granted, free of charge, to any person
  obtaining a copy of this software and associated documentation
@@ -26,11 +26,16 @@
  WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  OTHER DEALINGS IN THE SOFTWARE.
-*/
+ */
+
 
 #import "GifVideo.h"
 #import <OpenGLES/ES1/gl.h>
 #import <OpenGLES/ES1/glext.h>
+
+#import "PlayerView.h"
+
+extern GLint sMaxTextureSize;
 
 @implementation GifVideo
 
@@ -44,8 +49,18 @@ int goodSize(int val)
         val = 512;
     else if (val < 1024)
         val = 1024;
+    else if (val < 2048)
+        val = 2048;
+   else if (val < 4096)
+        val = 4906;
     
     return  val;
+}
+
+
+- (int)videoType
+{
+   return VIDEO_GIF;
 }
 
 - (id)initWithSource:(VideoSource*)source inContext:(EAGLContext*)ctx
@@ -55,27 +70,6 @@ int goodSize(int val)
         disposal = 0;
         trans = false;
         thumbDelegate = nil;
-        [self resetState];
-        
-        if (gifinfo == 0x0)
-        {
-            [self release];
-            return nil;
-        }
-        
-        // determine master width, height
-        
-        width  = goodSize(gifinfo->SWidth);
-        height = goodSize(gifinfo->SHeight);
-        
-        if (width > 1024 || height > 1024)
-        {
-            [self release];
-            return nil;
-        }
-        
-        prevFrame = NULL;
-        
         /*
          16 colours of format:
          #define GL_PALETTE4_RGB8_OES              0x8B90 (16*3) + ((width*height)/2)  // best
@@ -90,88 +84,37 @@ int goodSize(int val)
          #define GL_PALETTE8_R5_G6_B5_OES          0x8B97 (256*2) + (width*height) // second best
          #define GL_PALETTE8_RGBA4_OES             0x8B98 (256*2) + (width*height)
          #define GL_PALETTE8_RGB5_A1_OES           0x8B99 (256*2) + (width*height)
-        */
+         */
         
-        bpp = 8;//gifinfo->SColorMap->ColorCount > 16 ? 8 : 4;
+        bpp = 8;
         bestQuality = true;
+       
+        framebuffer = 0;
+        texture = 0;
+       
+        painter = NULL;
+        
+        [self resetState:YES];
+        
+        if (upload_size == 0 || gifinfo == 0x0)
+        {
+            [self release];
+            return nil;
+        }
     }
     
     return self;
 }
 
-- (void)allocTex {
-    if (tex)
-        VideoTexture_release(tex);
-    
-    GLint fmt;
-    if (bpp == 4)
-        fmt = bestQuality ? GL_PALETTE4_RGB8_OES : GL_PALETTE4_R5_G6_B5_OES;
-    else
-        fmt = bestQuality ? GL_PALETTE8_RGB8_OES : GL_PALETTE8_R5_G6_B5_OES;
-    
-    
-    tex = VideoTexture_init(width, height, fmt);    
-    upload_size = [self calcTexSize];
-}
-
 - (void)dealloc {
     // free gif...
-    if (prevFrame)
-        free(prevFrame);
-    if (disposeFrame)
-        free(disposeFrame);
+    if (gifinfo)
+        DGifCloseFile(gifinfo);
     
     [super dealloc];
 }
 
-- (UIImage*)dumpFrame:(char*)textureData
-{
-    // Make the bitmap
-    CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB();
-    unsigned char *mem = (unsigned char*)malloc(width * gifinfo->SHeight * 4);
-    CGContextRef ctx = CGBitmapContextCreate(mem,
-                                             gifinfo->SWidth,
-                                             gifinfo->SHeight,
-                                             8,
-                                             gifinfo->SWidth * 4,
-                                             colorspace,
-                                             kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
-    CGColorSpaceRelease(colorspace);
-    
-    if (!ctx) {
-        free(mem);
-        return NULL;
-    }
-    
-    // Copy pixels...
-    unsigned char *dat = mem;
-    unsigned char *ptr;
-    unsigned char *tPal = (unsigned char*)textureData;
-    unsigned char *fData = ((unsigned char*)textureData) + ((bpp == 8 ? 256 : 16)*3);
-    
-    for (int y=0; y<gifinfo->SHeight; y++) {
-        ptr = fData + (width * y);
-        for (int x=0; x<gifinfo->SWidth; x++) {
-            int spal = (*ptr++) * 3;
-            
-            *dat++ = tPal[spal];   // R
-            *dat++ = tPal[spal+1];   // G
-            *dat++ = tPal[spal+2]; // B
-            *dat++ = 255; // A
-        }
-    }
-    
-    CGImageRef img = CGBitmapContextCreateImage(ctx);
-    UIImage *ret = [UIImage imageWithCGImage:img];
-    
-    CGContextRelease(ctx);
-    free(mem);
-    CGImageRelease(img);
-    
-    return ret;
-}
-
-void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorMapObject *lmap, int* offset)
+void map_palette(unsigned char *curPal, int bestFormat, int transIdx, ColorMapObject *global, ColorMapObject *lmap)
 {
     unsigned char *cp = curPal;
     GifColorType *color;
@@ -180,40 +123,240 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
     if (!lmap) {
         count = global->ColorCount;
         color = global->Colors;
-        *cpo = 0;
     } else {
         count = lmap->ColorCount;
         color = lmap->Colors;
-        
-        // diff < 0, start at beginning
-        // diff > 0, 
-        int diff = (256-(*cpo+count));
-        if (diff < 0) {
-            diff = 0;
-            *cpo = 0;
-        } else {
-            *cpo += count;
-        }
-        cp += diff*3;
-        *offset = diff;
+        cp = curPal;
     }
     
     if (count < 0)
         return;
     
-    while (count-- != 0) {
-        *cp++ = color->Red;
-        *cp++ = color->Green;
-        *cp++ = color->Blue;
-        color++;
+    if (bestFormat) {
+       int idx = 0;
+       while (count-- != 0) {
+           *cp++ = color->Red;
+           *cp++ = color->Green;
+           *cp++ = color->Blue;
+           if (idx == transIdx)
+              *cp++ = 0;
+           else
+              *cp++ = 255;
+          color++;
+          idx++;
+       }
+    } else {
+       // TODO
     }
 }
 
-- (char*)dataForNextFrame:(float*)ft shouldStop:(bool*)sstop recurseCount:(int)recurse
+void setPointDrawRect(GLfloat *texCoords, GIFRect src_rect)
 {
+   float left = src_rect.x;
+   float top = src_rect.y;
+   float right = left + src_rect.width;
+   float bottom = top + src_rect.height;
+   
+   texCoords[0] = left;
+   texCoords[1] = bottom;
+   texCoords[2] = right;
+   texCoords[3] = bottom;
+   texCoords[4] = left;
+   texCoords[5] = top;
+   texCoords[6] = right;
+   texCoords[7] = top;
+}
+
+void setTexDrawRect(GLfloat *texCoords, int tex_width, int tex_height, GIFRect src_rect)
+{
+   float left = (float)src_rect.x / tex_width;
+   float top = (float)src_rect.y / tex_height;
+   float right = (float)(src_rect.x + src_rect.width) / tex_width;
+   float bottom = (float)(src_rect.y + src_rect.height) / tex_height;
+   
+   // Scale by the texture size
+   //left = tex_width / left;
+   //top = tex_height / top;
+   //right = tex_width / right;
+   //bottom = tex_height / bottom;
+   
+   texCoords[0] = left;
+   texCoords[1] = bottom;
+   texCoords[2] = right;
+   texCoords[3] = bottom;
+   texCoords[4] = left;
+   texCoords[5] = top;
+   texCoords[6] = right;
+   texCoords[7] = top;
+}
+
+// Copies raw bytes
+void copyImageBits8(unsigned char *dest, unsigned char *src, int width, int height, int stride)
+{//if (stride != 512) return;
+   unsigned char *ptr = dest;
+   //memcpy(dest, src, stride);
+   for (int y=0; y<height; y++) {
+      ptr = dest + (y*stride);
+      for (int x=0; x<width; x++) {
+         *ptr++ = *src++;
+      }
+   }
+}
+
+// Copies 256 color palette + data
+void copyImageBitsPal8(unsigned char *dest, unsigned char *src, int width, int height, int stride)
+{//if (stride != 512) return;
+   unsigned char *ptr;
+   memcpy(dest, src, 256*4);
+   src += 256*4;
+   //memcpy(dest + 256*3, src, stride);
+   
+   for (int y=0; y<height; y++) {
+      ptr = dest + (256*4) + (y*stride);
+      for (int x=0; x<width; x++) {
+         *ptr++ = *src++;
+      }
+   }
+}
+
+VideoWorkerFrame_t *errFrame= NULL;
+
+int sFrameCount = 0;
+
+void debugPrintRenderBuffer();
+
+- (bool)drawFrame:(VideoWorkerFrame_t*)frame andDisposal:(bool)updateDisposal
+{
+   //if (frame)
+   //   printf("drawFrame: drawing frame %i\n", frame->frameID);
+   
+   // Don't draw if we haven't recieved frames yet
+   if (frame == NULL && last_frame.data == NULL)
+      return false;
+   
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   
+   glEnableClientState(GL_VERTEX_ARRAY);
+   glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+   glVertexPointer(2, GL_FLOAT, 0, sVidSquareVertices);
+   glTexCoordPointer(2, GL_FLOAT, 0, sVidSquareTexcoords);
+   
+   // Draw disposal frame
+   if (updateDisposal) {
+      // Now drawing to texture
+      TargetRenderInfoSet(disposalRenderInfo);
+      glMatrixMode(GL_MODELVIEW);
+      glPushMatrix();
+      glLoadIdentity();
+      
+      /*glPushMatrix();
+      glTranslatef(last_frame.rect.x, last_frame.rect.y, last_frame.rect.width);
+      glPopMatrix();*/
+      
+      if (frame && frame->reset) {
+         glClearColor(1,0,0,0);
+         glClear(GL_COLOR_BUFFER_BIT);
+      }
+      else {
+         [self setPaintHead:painter];
+         
+         // draw new previous frame
+         switch (last_frame.disposal_type) {
+            case DISPOSE_RESET:
+               // Clear all pixels
+               glEnable(GL_SCISSOR_TEST);
+               glScissor(last_frame.rect.x, last_frame.rect.y, last_frame.rect.width, last_frame.rect.height);
+               glClearColor(0,0,0,0);
+               glClear(GL_COLOR_BUFFER_BIT);
+               glDisable(GL_SCISSOR_TEST);
+               break;
+            case DISPOSE_CLEARBG:
+               // Clear BG color
+               glEnable(GL_SCISSOR_TEST);
+               glScissor(last_frame.rect.x, last_frame.rect.y, last_frame.rect.width, last_frame.rect.height);
+               glClearColor(last_frame.clear_r / 255.0f, last_frame.clear_g  / 255.0f, last_frame.clear_b  / 255.0f, last_frame.clear_a  / 255.0f);
+               glClear(GL_COLOR_BUFFER_BIT);
+               glDisable(GL_SCISSOR_TEST);
+               break;
+            case DISPOSE_PREVIOUSBG:
+               // Do nothing
+               break;
+            case DISPOSE_NONE:
+            default:
+               // Copy current frame to previous
+               //setPointDrawRect(sVidSquareVertices, last_frame.rect);
+               //setTexDrawRect(sVidSquareTexcoords, painter->width, painter->height, tex_rect);
+               
+               glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+               /*glEnable(GL_SCISSOR_TEST);
+                glScissor(last_frame.rect.x, last_frame.rect.y, last_frame.rect.width, last_frame.rect.height);
+                glClearColor(0,1,0,1);
+                glClear(GL_COLOR_BUFFER_BIT);
+                glDisable(GL_SCISSOR_TEST);*/
+               break;
+         }
+      }
+      
+      // Reset state
+      glMatrixMode(GL_MODELVIEW);
+      glPopMatrix();
+      glFinish();
+   }
+   
+   // Set player view rendering
+   TargetRenderInfoSet(viewRenderInfo);
+      
+   // Update paint head
+   if (frame)
+   {
+      if (!VideoTexture_lock(painter)) {
+         return false;
+      }
+      memset(painter->data, '\0', upload_size);
+      copyImageBitsPal8(painter->data, frame->data, frame->rect.width, frame->rect.height, painter->width);
+      VideoTexture_unlock(painter);
+   }
+   
+   // First, render last frame (ALL of it)
+   if ((frame && !frame->reset) || !(!frame && last_frame.reset)) {
+      GIFRect rect;
+      rect.x = 0;
+      rect.y = 0;
+      rect.width = gifinfo->SWidth;
+      rect.height = gifinfo->SHeight;
+      [self drawPreviousFrame:rect];
+   }
+   
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   
+   //debugPrintRenderBuffer();
+   
+   if (frame) last_frame = *frame;
+   GIFRect tex_rect = last_frame.rect;
+   tex_rect.x = tex_rect.y = 0;
+   
+   // draw new frame
+   [self setPaintHead:painter];
+   setPointDrawRect(sVidSquareVertices, last_frame.rect);
+   setTexDrawRect(sVidSquareTexcoords, painter->width, painter->height, tex_rect);
+   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+   
+   // if (sFrameCount++ >= 2) {
+   //    return true;
+   // }
+   //return false;
+   
+   return true;
+}
+
+- (bool)nextFrame:(VideoWorkerFrame_t*)frame
+{
+    unsigned char *data = frame->data;
     // Are we reading headers?
     if (!VideoSource_bytesready(src))
-        return NULL;
+        return false;
     
     //L0Log(@"frame == %d, sync == %f, fps == %f", frame, sync_time, fps_time);
     
@@ -225,7 +368,7 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
         
         // Currently reading headers?
         if (!VideoSource_bytesready(src))
-            return NULL;
+            return false;
         
         VideoSource_startBytes(src); // start pos (if not set)
         
@@ -259,13 +402,13 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
                         if (*ptr & 0x1) {
                             transindex = *(ptr+3);
                             trans = true;
-                        }
-                        else
+                        } else {
                             trans = false;
-                        
-                        
+                            transindex = -1;
+                        }
                         int frametime = *(ptr+1) | (*(ptr+2) << 8);
                         disposal= ((*ptr)>>2) & 0x7;
+                        if (disposal == 0) disposal = 1; // Fix for broken gifs
                         
                         // 0 == no action  (reset)
                         {
@@ -276,13 +419,28 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
                         
                         if(frametime<10) frametime=10;
                         if(disposal==4) disposal=3;
+                       
+                        switch (disposal) {
+                           case 0:
+                              frame->disposal_type = DISPOSE_RESET;
+                              break;
+                           case 1:
+                              frame->disposal_type = DISPOSE_NONE;
+                              break;
+                           case 2:
+                              frame->disposal_type = DISPOSE_CLEARBG;
+                              break;
+                           case 3:
+                              frame->disposal_type = DISPOSE_PREVIOUSBG;
+                              break;
+                           default:
+                              frame->disposal_type = DISPOSE_NONE;
+                              break;
+                        }
                         
-                        *ft = (1.0/100.0)*frametime;
                         
-                        if (prevFrame == NULL)
-                            prevFrame = (unsigned char*)malloc(width*height);
-                        if (disposeFrame == NULL)
-                            disposeFrame = (unsigned char*)malloc(width*height);
+                        frame->dt = (1.0/100.0)*frametime;
+                        frame->blend_type = BLEND_SOURCE;
                         
                         //if(disposal==2&&transindex==gifinfo->SBackGroundColor)
                         //    trans=true;
@@ -308,13 +466,18 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
                 
                 // loop or stop completely
                 if (!loop) {
-                    *sstop = true;
-                    return NULL;
+                    [self stop];
+                    return false;
                 } else {
                     // Start again!
-                    [self resetState];
-                    return recurse > 2 ? NULL : [self dataForNextFrame:ft shouldStop:sstop recurseCount:recurse+1];
+                   [self resetState:NO];
+                    return false;
                 }
+            }
+            else
+            {
+                // Waiting for data, flush the damn state
+               [self flushState];
             }
         }
     }
@@ -324,37 +487,50 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
         // starting at IMAGE_DESC_RECORD_TYPE
         int gwidth  = gifinfo->Image.Width;
         int gheight = gifinfo->Image.Height;
+       
+        int palSize = bestQuality ? 4 : 2;
+       
+        unsigned char curPal[256*4];
+       
+        // Map image palette colors info color map
+        map_palette(curPal, bestQuality, transindex, gifinfo->SColorMap, gifinfo->Image.ColorMap);
+       
+        frame->rect.x = gifinfo->Image.Left;
+        frame->rect.y = gifinfo->Image.Top;
+        frame->rect.width = gwidth;
+        frame->rect.height = gheight;
+       
+        unsigned char *cp = curPal + (gifinfo->SBackGroundColor*palSize);
+        if (trans && transindex == gifinfo->SBackGroundColor) {
+           frame->clear_a = 0;
+        } else {
+           frame->clear_a = 255;
+        }
+       
+        frame->clear_r = cp[0];
+        frame->clear_g = cp[1];
+        frame->clear_b = cp[2];
+        frame->reset = current_frame == 0;
+        frame->frameID = current_frame++;
+        //printf("GifInfo: added frame %i\n", frame->frameID);
+        
+       
+        // Now we decode the frame
         
         unsigned char *gif_data = ( unsigned char * ) malloc( gwidth * gheight );
         
         if (DGifGetLine(gifinfo, gif_data, gwidth * gheight) != GIF_ERROR) {
             readingFrame = NO;
-            unsigned char *dat = ( unsigned char* ) malloc( upload_size );
-            unsigned char *sdat = dat+((bpp == 8 ? 256 : 16)*3);
-            
-            // Restore previous frame (> 0)... or the background (no frame)
-            if (disposal != 0 && prevFrame)
-                memcpy(sdat, prevFrame, width*height);
-            else if (prevFrame == NULL)
-                memset(sdat, gifinfo->SBackGroundColor, width*height);
-            
-            // For disposal #3, we need to keep a copy of this frame
-            if (disposal == 3 && disposeFrame)
-                memcpy(disposeFrame, sdat, width*height);
-            
-            unsigned char *buff = (unsigned char*)dat;
-            int custom = 0;
-            
-            // Map image palette colors info color map
-            map_palette(curPal, &curPalOffs, gifinfo->SColorMap, gifinfo->Image.ColorMap, &custom);
-            memcpy(buff, curPal, sizeof(curPal)); buff += sizeof(curPal);
+            unsigned char *buff = (unsigned char*)data + (256*palSize);
+            memcpy(data, curPal, 256*palSize);
+            memset(buff, '\0', width*height);
+           
+            //memset(buff, gifinfo->SBackGroundColor, width*height);
             
             // src is data
             unsigned char *gifsrc = (unsigned char *)gif_data;
-            buff += (width * gifinfo->Image.Top) + gifinfo->Image.Left;
-            int right = gwidth;
             int bottom = gheight;
-            int next = ((width-gwidth) * (8/bpp));
+            int next = 0;//(width-gwidth);
             
             if (gifinfo->Image.Interlace)
             {
@@ -386,79 +562,27 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
                     for (int destRow = startRow; destRow < bottom; destRow += interval)
                     {
                         unsigned char *dptr = buff + (destRow * (gwidth+next));
-                        unsigned char *sptr = gifsrc + (sourceRow * gwidth);
-                        for (int j=0; j<gwidth; j++) {
-                            unsigned char c = *sptr++;
-                            if (trans && c == transindex) {
-                                dptr++;
-                                continue;
-                            }
-                            *dptr++ = c + custom;
+                        unsigned char *sptr = gifsrc + (sourceRow * gwidth);                        for (int j=0; j<gwidth; j++) {
+                             *dptr++ = *sptr++;
                         }
                         
                         sourceRow++;
                     }
                 }
             }
-            else while (bottom-- != 0) // non-interlaced
+            else while (bottom--) // non-interlaced
             {
-                right = gwidth;
+                int right = gwidth;
                 while (right-- != 0) {
-                    unsigned char c = *gifsrc++;
-                    if (trans && c == transindex) {
-                        buff++;
-                        continue;
-                    }
-                    *buff++ = c + custom;
+                    *buff++ = *gifsrc++;
                 }
                 buff += next;
             }
             
-            // Keep a copy of this frame for reference
-            if (prevFrame)
-                memcpy(prevFrame, sdat, width*height);
-            
-            free(gif_data);
-            
-            // Now dipose bits in lastFrame
-            if (prevFrame && disposal > 1) {
-                unsigned char *dptr = prevFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
-                int right = gwidth;
-                int bottom = gheight;
-                int next = ((width-gwidth) * (8/bpp));
-                
-                if (disposal == 2) { // set background color
-                    while (bottom-- != 0)
-                    {
-                        right = gwidth;
-                        while (right-- != 0)
-                            *dptr++ = gifinfo->SBackGroundColor;
-                        dptr += next;
-                    }
-                } else if (disposal == 3) { // set previous background
-                    unsigned char *sptr = disposeFrame + (width * gifinfo->Image.Top) + gifinfo->Image.Left;
-                    
-                    while (bottom-- != 0) {
-                        right = gwidth;
-                        while (right-- != 0) {
-                            *dptr++ = *sptr++;
-                        }
-                        dptr += next;
-                        sptr += next;
-                    }
-                }
-            }
-            
             VideoSource_endBytes(src);
-            
-            // Handle thumbnail
-            if (thumbDelegate) {
-                UIImage *img = [self dumpFrame:(char*)dat];
-                [thumbDelegate performSelector:@selector(videoDumpedFrame:) withObject:img];
-                thumbDelegate = nil;
-            }
-            
-            return (char*)dat;
+           
+            free(gif_data);
+            return true;
         } else {
             free(gif_data);
             
@@ -469,51 +593,88 @@ void map_palette(unsigned char *curPal, int *cpo, ColorMapObject *global, ColorM
                 
                 // Error, loop frame in case of EOF
                 if (!loop) {
-                    *sstop = true;
-                    return NULL;
+                    [self stop];
+                    return false;
                 } else {
-                    [self resetState];
-                    return recurse > 2 ? NULL : [self dataForNextFrame:ft shouldStop:sstop recurseCount:recurse+1];
+                   [self resetState:NO];
+                    return false;
                 }
             }
             else
             {
+                [self flushState];
+                
                 // Keep reading the image description (last saved place) until we get more data
                 //L0Log(@"NOT ENOUGH DATA TO DECODE...");
                 VideoSource_rewind(src);
                 readingFrame = false;
-                return NULL;
+                return false;
             }
         }
-        
     }
     
-    return NULL;
+    return false;
 }
 
 static int gifReadDataFn(GifFileType *gifinfo, GifByteType *data, int length)
 {
     VideoSource *src = (VideoSource*)gifinfo->UserData;
-    return VideoSource_read(src, (char*)data, length);
+    return VideoSource_read(src, (unsigned char*)data, length);
 }
 
-- (void)resetState
+- (void)resetState:(bool)gl
 {
+    sFrameCount = 0;
+    current_frame = 0;
+    errFrame = NULL;
+    last_frame.data = NULL;
+    waitDT = 0;
+   
     VideoSource_seek(src, 0);
     if (gifinfo)
         DGifCloseFile(gifinfo);
-    if (!beingDestroyed)
-        gifinfo = DGifOpen( src, gifReadDataFn);
-    if (prevFrame)
-        free(prevFrame);
-    if (disposeFrame)
-        free(disposeFrame);
+    gifinfo = DGifOpen( src, gifReadDataFn);
+    if (gifinfo)
+        gifinfo->generateSavedImages = false;
     
     readingFrame = false;
-    curPalOffs = 0;
-    if (!beingDestroyed)
-        memset(curPal, 0, sizeof(curPal));
-    prevFrame = disposeFrame = NULL;
+    
+    // determine master width, height
+    
+    width  = gifinfo ? goodSize(gifinfo->SWidth) : 0;
+    height = gifinfo ? goodSize(gifinfo->SHeight) : 0;
+    
+    if (gifinfo == NULL || width > sMaxTextureSize || height > sMaxTextureSize)
+    {
+        upload_size = 0;
+        if (gifinfo)
+            DGifCloseFile(gifinfo);
+        gifinfo = nil;
+        return;
+    }
+    
+ // texture format
+    fmt = bestQuality ? GL_PALETTE8_RGBA8_OES : GL_PALETTE8_RGBA4_OES;
+        
+    upload_size = VideoTexture_sizeOfTexture(fmt, width, height, 0);
+   
+   if (gl) {
+   
+    if (painter)
+      VideoTexture_release(painter);
+   
+    painter = VideoTexture_init(width, height, fmt);
+   }
+}
+
+- (void)flushState
+{
+    int oldPos = src->pos;
+    VideoSource_seek(src, 0);
+    if (gifinfo)
+        DGifCloseFile(gifinfo);
+    gifinfo = DGifOpen(src, gifReadDataFn);
+    VideoSource_seek(src, oldPos);
 }
 
 - (void)frameClipScale:(float*)scale
