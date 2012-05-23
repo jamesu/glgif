@@ -2,7 +2,7 @@
  
  glgif
  
- PlayerView - example view to play the GifVideo.
+ GifVideo - implementation of Video which plays animated gifs.
  
  Copyright (C) 2009-2012 James S Urquhart
  

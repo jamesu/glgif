@@ -2,7 +2,7 @@
  
  glgif
  
- PlayerView - example view to play the GifVideo.
+ VideoSource - data source for progressive video playback.
  
  Copyright (C) 2009-2012 James S Urquhart
  

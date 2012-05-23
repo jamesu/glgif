@@ -2,7 +2,7 @@
  
  glgif
  
- PlayerView - example view to play the GifVideo.
+ Video - base class for video playback.
  
  Copyright (C) 2009-2012 James S Urquhart
  

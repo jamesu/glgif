@@ -2,7 +2,7 @@
  
  glgif
  
- PlayerView - example view to play the GifVideo.
+ VideoTexture - wrapper for uploading OpenGLES textures.
  
  Copyright (C) 2009-2012 James S Urquhart
  
