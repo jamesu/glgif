@@ -132,7 +132,7 @@ void TargetRenderInfoSet(TargetRenderInfo info)
    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-- (bool)drawNextFrame:(float)dt toView:(PlayerView*)view withBackingSize:(CGSize)size
+- (bool)drawNextFrame:(float)dt
 {
    GLfloat squareVertices[8];
    GLfloat squareTexcoords[8];

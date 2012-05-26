@@ -146,7 +146,7 @@ void TargetRenderInfoSet(TargetRenderInfo info);
 - (void)frameClipScale:(float*)scale;
 - (CGSize)frameSize;
 - (CGSize)backingSize;
-- (bool)drawNextFrame:(float)dt toView:(PlayerView*)view withBackingSize:(CGSize)size;
+- (bool)drawNextFrame:(float)dt;
 
 - (bool)drawFrame:(VideoWorkerFrame_t*)frame andDisposal:(bool)updateDisposal;
 - (void)drawPreviousFrame:(GIFRect)frameRect;

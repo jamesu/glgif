@@ -283,7 +283,7 @@ GLint sMaxTextureSize = 1024;
     glTranslatef(-(frameSize.width*0.5), -(frameSize.height*0.5), 0);
     
     // Draw next frame
-    drawn = [video drawNextFrame:animationInterval toView:self withBackingSize:CGSizeMake(backingWidth, backingHeight)];
+    drawn = [video drawNextFrame:animationInterval];
     
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
